@@ -10,6 +10,9 @@ import 'office-ui-fabric-react/dist/css/fabric.css';
 import "./assets/css/style.css"
 import moment from "moment";
 // import parse from "./utils/parse";
+import pdfjs from 'pdfjs-dist/es5/build/pdf.js';
+import pdfjsWorker from 'pdfjs-dist/es5/build/pdf.worker.entry';
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 initializeIcons();
 
@@ -38,25 +41,60 @@ class App extends Component {
 
     // const text = parse(filePath);
 
-    file.text().then(text => {
-      const splitArr = text.split(/\s+/);
+    // @TODO resolve error pdf.js:24519 Not allowed to load local resource
+    // const loadFile = pdfjs.getDocument(filePath);
+    // parse Common App requirements grid below to demonstrate functionality
+    // (https://appsupport.commonapp.org/applicantsupport/s/article/Where-can-I-find-the-Requirements-Grid)
+    const loadFile = pdfjs.getDocument('https://content.commonapp.org/Files/ReqGrid.pdf');
+    loadFile.promise.then(pdf => {
+      this.chain("", pdf, 1, pdf._pdfInfo.numPages);
+    }, reason => {
+      console.error(reason);
+    })
+  }
+
+  chain(text, pdf, pageNumber, pageCount) {
+    if (pageNumber <= pageCount) {
+      const page = pdf.getPage(pageNumber);
+      pageNumber++;
+      page.then(page => {
+        let pageText = page.getTextContent();
+        let hyphen = false;
+        pageText.then(pageText => {
+          for (let i = 0; i < pageText.items.length; i++) {
+            let next = pageText.items[i].str;
+            if (next.charAt(next.length - 1) === "-") {
+                text += next.substring(0, next.length - 1);
+                hyphen = true;
+            } else if (hyphen) {
+                text += next;
+                hyphen = false;
+            } else {
+                text += " " + next;
+            }
+          }
+          return this.chain(text, pdf, pageNumber, pageCount);
+        });
+      });
+    } else {
+      const wordCount = text.split(/\s+/).length;
       this.setState({
-        wordCount: splitArr.length,
+        wordCount: wordCount,
         parsedPDF: text,
         isParsing: false
       });
-      const parsedHistory = this.state.history === null ? [] :
-        JSON.parse(this.state.history);
+      const parsedHistory = this.state.history === null ? [] : JSON.parse(this.state.history);
       parsedHistory.push({
-        nickname: nickname,
-        fileName: file.name,
+        nickname: this.state.nickname,
+        fileName: this.state.file.name,
         timestamp: moment().format("dddd, M/DD/YY, h:mm a"),
-        wordCount: splitArr.length
+        wordCount: wordCount
       });
       const historyString = JSON.stringify(parsedHistory);
       this.setState({ history: historyString});
       localStorage.setItem("uploads", historyString);
-    });
+      return Promise.resolve();
+    }
   }
 
   render() {
